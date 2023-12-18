@@ -1,0 +1,23 @@
+# Archivos y carpetas generados por R/RStudio
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user
+
+# Archivos de paquetes R
+*.tar.gz
+*.Rcheck/
+renv/library/
+renv/local/
+
+# Archivos temporales de TeX generados por knitr
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+
+# Otros archivos y carpetas a ignorar
+.DS_Store
+Thumbs.db
