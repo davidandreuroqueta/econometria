@@ -1,0 +1,278 @@
+---
+title: "Trabajo"
+author: "Hector"
+date: "2023-10-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Librerias utilizadas
+
+```{r}
+library("readxl")
+library("plm")
+library("forecast")
+library("dplyr")
+library("tidyr")
+```
+
+# Trabajo Académico
+
+## Introducción
+
+Hoy en día la accesibilidad a la vivienda es un problema presente en nuestra sociedad. Nosotros vamos a intentar analizarlo desde el punto de vista del precio de la vivienda.
+
+## Pregunta
+
+¿Como se comporta el precio de la vivienda? ¿Como se relaciona el precio de la vivienda con el IPC, las personas activas y el coste salarial?
+
+## Descripción de los datos
+
+En nuestro archivo datos_trabajo.xlsx, tenemos un total de 204 observaciones y 6 variables. Las variables se definen de la siguiente forma:
+
+-   CCAA: comunidad autonóma (individuos) (no tenemos datos ni de Ceuta ni de Melilla)
+-   Periodo: periodo de tiempo, desde 2017 hasta 2020 divididos por trimestres
+-   IPC: indices de precio de consumo
+-   Personas activas: el número de personas activas
+-   Precio vivienda: es un índice confeccionado en España por el Instituto Nacional de Estadística que fue publicado con el propósito de reflejar la evolución de precios de la vivienda.
+-   Coste_salarial_total: se refiere al gasto total que una empresa incurre al pagar los salarios y las prestaciones a sus empleados. Se incluyen los sectores de industria, construcción y servicios
+
+Destacar que son datos de panel ya que contienen una serie temporal por cada unidad de unos datos de corte transversal. Al ser datos de panel tenemos individuos (CCAA) y el periodo de tiempo (periodo) y el número de observaciones coincide con el resultado de multiplicar el número de periodos de tiempo por el número de individuos 17x12=204 que son nuestras observaciones.
+
+La pregunta a la que responderemos con estos datos es si influyen y en el caso de que influyan de que forma, el ipc, el coste salarial total y el número de personas activas sobre el precio de la vivienda.
+
+## Carga de datos
+
+Abrimos nuestro fichero de datos y cargamos los datos en un panel data frame. Le especificamos los dos índices que son la comundiad autónoma (CCAA) y el periodo de tiempo (Periodo)
+
+```{r}
+datos <- read_excel("./datos_trabajo.xlsx")
+data <- pdata.frame(datos, index = c("CCAA","Periodo"), drop.index = FALSE, row.names = TRUE)
+
+head(data)
+
+```
+
+Convertimos a numérico las columnas Personas_activas y Precio_vivienda que estaban en tipo texto y cambiamos el nombre de la columna Coste.salarial.total a Coste_salarial_total.
+
+```{r}
+data$Personas_activas = as.numeric(data$Personas_activas)
+data$Precio_vivienda = as.numeric(data$Precio_vivienda)
+colnames(data)[colnames(data) == "Coste.salarial.total"] <- "Coste_salarial_total"
+
+head(data)
+```
+
+## Modelos de datos de panel
+
+Como la pregunta que nos planteamos es como influye el ipc, el coste salarial total y el número de personas activas en el precio de la vivienda, los modelos que se trabajarán a continuación tendrá como variable dependiente el precio de la vivienda y como variable independiente el número de personas activas, el ipc y el coste salarial total.
+
+A continuación, vamos a estimar los distintos modelos e interpretar los coeficientes.
+
+-   Modelo de pool de datos
+-   Efectos fijos individuales MCVD
+-   Efectos aleatorios
+
+Una vez hechos los modelos, elegiremos tanto desde el punto de vista teórico como con los contrastes de homogeneidad y de Hausman que modelo describe mejor el precio de la vivienda.
+
+### Modelo Pool de datos
+
+```{r}
+pool_datos <- plm(Precio_vivienda ~ Personas_activas + IPC + Coste_salarial_total, data = data, model = "pooling")
+
+summary(pool_datos)
+```
+
+El intercept es -169.69. Este valor es la estimación del precio de la vivienda cuando todas las demás variables son cero.
+
+El coeficiente asociado a la variable "Personas_activas" es -7.3953e-05. No es estadísticamente significativo a un nivel de confianza del 95% (p-value = 0.7162).
+
+El coeficiente asociado al IPC es 2.5965. Es estadísticamente significativo (p-value \< 0.001), y positivo. Cada unidad de aumento en el IPC se asocia con un aumento de 2.5965 en el precio de la vivienda.
+
+El coeficiente asociado al "Coste_salarial_total" es 0.017343. Es estadísticamente significativo (p-value \< 0.001) y positivo. Cada unidad de aumento en el coste salarial total se asocia con un aumento de 0.017343 en el precio de la vivienda.
+
+El valor F es 47.936 con un p-value muy pequeño (\< 2.22e-16). Esto sugiere que al menos una de las variables independientes es significativa en la explicación de la variabilidad en el precio de la vivienda.
+
+En resumen, el modelo sugiere que el IPC y el Coste Salarial Total son variables significativas y positivas en la explicación del precio de la vivienda, mientras que la variable "Personas_activas" no parece tener un impacto significativo.
+
+### Efectos fijos individuales MCVD
+
+Consideramos efectos fijos para cada Comunidad Autónoma (CCAA).
+
+```{r}
+efectos_fijos <- plm(Precio_vivienda ~ Personas_activas + IPC + Coste_salarial_total + as.factor(CCAA), data = data, model="pooling")
+
+summary(efectos_fijos)
+```
+
+El intercept es -288.2. Esto representa el valor estimado del precio de la vivienda cuando todas las demás variables son cero y cuando la CCAA es la referencia en nuestro caso Andalucía.
+
+El coeficiente asociado a la variable "Personas_activas" es 0.00955. Es estadísticamente significativo (p-value \< 0.001), y positivo. Cada unidad de aumento en las personas activas se asocia con un aumento de 0.00955 en el precio de la vivienda.
+
+El coeficiente asociado al IPC es 4.05. Es estadísticamente significativo (p-value \< 0.001), y positivo. Cada unidad de aumento en el IPC se asocia con un aumento de 4.05 en el precio de la vivienda.
+
+El coeficiente asociado al "Coste_salarial_total" es -0.01665. Es estadísticamente significativo (p-value \< 0.001), y negativo. Cada unidad de aumento en el coste salarial total se asocia con una disminución de 0.01665 en el precio de la vivienda.
+
+Cada CCAA tiene su propio coeficiente asociado, que representa el cambio promedio en el precio de la vivienda en esa CCAA en comparación con la CCAA de referencia (Andalucía).
+
+El valor F es 121.2 con un p-value muy pequeño (\< 2.2e-16). Esto sugiere que al menos una de las variables independientes o efectos fijos es significativa en la explicación de la variabilidad en el precio de la vivienda. El único coeficiente que no es significativo es el de les Illes Balears. Este resultado sugiere que, según el modelo, no hay evidencia suficiente para afirmar que las Islas Baleares tienen un efecto significativo y diferente en el precio de la vivienda en comparación con Andalucía.
+
+El modelo parece tener un buen ajuste y explica una gran proporción de la variabilidad en el precio de la vivienda. Las variables de personas activas, IPC y coste salarial total son significativas en la predicción del precio de la vivienda, y también hay diferencias significativas en los precios de vivienda entre las diferentes CCAA.
+
+### Efectos aleatorios
+
+```{r}
+efectos_aleatorios <- plm(Precio_vivienda ~ Personas_activas + IPC + Coste_salarial_total , data = data, model = "random")
+summary(efectos_aleatorios)
+```
+
+El intercept es -254.45. Este valor es la estimación del precio de la vivienda cuando todas las demás variables son cero, y representa la media de los interceptos individuales.
+
+El coeficiente asociado a la variable "Personas_activas" es 8.5802e-05. No es estadísticamente significativo a un nivel de confianza del 95% (p-value = 0.8984).
+
+El coeficiente asociado al IPC es 4.0642. Es estadísticamente significativo (p-value \< 0.001), y positivo. Cada unidad de aumento en el IPC se asocia con un aumento de 4.0642 en el precio de la vivienda.
+
+El coeficiente asociado al "Coste_salarial_total" es -0.013654. Es estadísticamente significativo (p-value \< 0.001), y negativo. Cada unidad de aumento en el coste salarial total se asocia con una disminución de 0.013654 en el precio de la vivienda.
+
+El valor de chi-cuadrado es 430.173 con un p-value muy pequeño (\< 2.22e-16). Esto sugiere que al menos una de las variables independientes es significativa en la explicación de la variabilidad en el precio de la vivienda.
+
+La proporción de error idiosincrático es del 14%, mientras que la individual del 86%. La proporción del 14.4% para el efecto idiosincrático significa que una parte relativamente pequeña de la variabilidad total en el precio de la vivienda se debe a factores específicos de cada observación que no están explicados por las variables incluidas en tu modelo. Por otro lado, la proporción del 85.6% para el efecto individual significa que la mayoría de la variabilidad total en el precio de la vivienda se debe a diferencias sistemáticas entre las entidades (individuos) que no están capturadas por las variables incluidas en el modelo.
+
+El modelo de efectos aleatorios tiene en cuenta la variabilidad no observada específica a cada entidad (efecto individual) y la variabilidad no observada específica a cada observación (efecto idiosincrático). Los resultados sugieren que una parte significativa de la variabilidad en el precio de la vivienda se debe a efectos individuales, y las variables IPC y Coste Salarial Total son significativas en la predicción del precio de la vivienda. La variable Personas Activas no parece ser significativa en este modelo.
+
+### Conclusiones (Elección del modelo)
+
+Desde el punto de vista teórico, entre un modelo de pool de datos y un modelo de efectos fijos individuales eligiremos el modelo de efectos fijos individuales porque existen diferencias en el precio de la vivienda en cada CCAA. No es lo mismo el precio de la vivienda en Madrid que en Castilla-La-Mancha o Extremadura.
+
+Y entre un modelo de efectso fijos o aleatorios, elegiremos el modelo de efectos fijos ya que la muestra no es aleatoria.
+
+Desde el punto de vista de los contrastes, aplicamos en primer lugar el contraste de homogeneidad para elegir entre pool de datos o efectos fijos.
+
+H0: no hay diferencias entre los individuos, todas las alfas son iguales H1: Hay diferencias entre individuos, y por tanto es preferible tenerlas en cuenta
+
+```{r}
+pFtest(efectos_fijos, pool_datos)
+```
+
+Como el p-valor \< 0.05, rechazamos H0 y por tanto existirán diferencias entre los individuos y nos quedaremos con el modelo de efectos fijos.
+
+A continuación, comparamos el modelo de efectos fijos con el modelo de efectos aleatorios con el test de Hausman
+
+H0: No hay diferencias entre los estimadores por EF o EA, beta de efectos fijos = beta de efectos aleatorios H1: Hay diferencias entre estimadores, probablemente porque los EA estén correlacionados con las regresoras, beta de efectos fijos distinto beta de efectos aleatorios
+
+```{r}
+phtest(efectos_fijos, efectos_aleatorios)
+```
+
+Como el p-valor \< 0.05, rechazamos H0 y por tanto existirán diferencias entre los estimadores y nos quedaremos con el modelo de efectos fijos.
+
+Se puede concluir, que el modelo que mejor explica el precio de la vivienda es el modelo de efectos fijos individuales MCVD.
+
+## Series temporales
+
+Para analizar series temporales, la variables que vamos a utilizar es el precio de la vivienda en la comunidad Valenciana. Tenemos los datos de 2007 hasta 2023 por trimestres.
+
+### Carga de datos
+
+Abrimos el fichero donde se encuentran nuestros datos, en este fichero encontramos por trimestres desde el año 2007 hasta el tercer trimestre del año 2023, el precio de la vivienda en la comunidad valenciana
+
+```{r}
+df <- read_excel("./precio_vivienda_trabajo.xlsx")
+```
+
+Como los trimestres están ordenados en sentido contrario al necesario para trabajar series temporales, cambiamos el orden
+
+```{r}
+# Ordenar las filas por la columna de fechas (B)
+df <- df[order(as.character(df$Periodo)), ]
+```
+
+### Análisis exploratorio
+
+```{r}
+# Función para convertir el trimestre a fecha
+convertir_a_fecha <- function(trimestre) {
+  año <- substr(trimestre, 1, 4)
+  t <- substr(trimestre, 6, 6)
+  
+  # Definir el mes de inicio para cada trimestre
+  mes_inicio <- ifelse(t == "1", "01", 
+                       ifelse(t == "2", "04", 
+                              ifelse(t == "3", "07", "10")))
+  
+  fecha = as.Date(paste(año, mes_inicio, "01", sep = "-"))
+  return(format(fecha, "%Y-%m-%d"))
+}
+
+# Aplicar la función a la columna Periodo
+df$Periodo <- sapply(df$Periodo, convertir_a_fecha)
+df$Periodo = as.Date(df$Periodo)
+```
+
+```{r}
+library(ggplot2)
+
+# Convertir la columna 'Periodo' a formato de fecha (aproximando cada trimestre al inicio del mes correspondiente)
+# df$Periodo <- as.Date(substr(df$Periodo, 1,4), format = "%Y%m")
+# df$Periodo <- as.Date(sub("-01", "-04", sub("-02", "-07", sub("-03", "-10", format(df$Periodo, "%Y-%m")))))
+
+# Crear el gráfico
+ggplot(df, aes(x = Periodo, y = Precio_vivienda)) +
+  geom_line() +  # Línea para mostrar la evolución del precio
+  geom_vline(xintercept = as.Date("2008-01-01"), linetype = "dashed", color = "red") +  # Línea vertical en 2012
+  annotate("text", x = as.Date("2008-01-01"), y = max(df$Precio_vivienda), label = "Estallido burbuja", hjust = -0.2, vjust = 1, color = "red") +
+  labs(title = "Evolución del Precio de la Vivienda en España (2007-2023)",
+       x = "Periodo",
+       y = "Precio de la Vivienda") +
+  geom_vline(xintercept = as.Date("2014-01-01"), linetype = "dashed", color = "blue") +  # Línea vertical en 2012
+  annotate("text", x = as.Date("2014-01-01"), y = max(df$Precio_vivienda), label = "Empieza a remontar el precio", hjust = -0.1, vjust = 1, color = "blue") +
+  labs(title = "Evolución del Precio de la Vivienda en España (2007-2023)",
+       x = "Periodo",
+       y = "Precio de la Vivienda") +
+  theme_minimal() +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") # Formato del eje X
+```
+
+### Modelado de series temporales
+
+```{r}
+# Cogemos los datos desde 2014
+df = df %>%
+  filter(Periodo >= as.Date("2014-01-01"))
+
+dept.ts<-ts(df$Precio_vivienda, start=c(1,1), end=c(10,3), freq = 4)
+
+autoplot(dept.ts)
+```
+
+```{r}
+dept.ts.train<-window(dept.ts,start=c(1,1),end=c(9,1))
+dept.ts.valid<-window(dept.ts,start=c(9,2),end=c(10,3))
+
+
+dept.lm<-tslm(dept.ts.train~trend+season,lambda=0)
+
+summary(dept.lm)
+```
+
+Vamos a hacer un modelo ARIMA para predecir el índice del precio de la vivienda.
+
+```{r}
+dept.ts.train.arima = Arima(dept.ts.train, order = c(1, 1, 1))
+summary(dept.ts.train.arima)
+autoplot(cbind(dept.ts.train.arima$fitted,dept.ts), xlab="Año", ylab="Indice precio vivienda")
+```
+
+Vamos a ver como hace la predicción:
+
+```{r}
+predicciones_test <- forecast(dept.ts.train.arima, h = length(dept.ts.valid))
+
+
+autoplot(predicciones_test, xlab = "Año", ylab = "Índice precio de la vivienda") +
+  autolayer(predicciones_test, series = "Lower", col = "blue", alpha = 0.3) +
+  autolayer(predicciones_test, series = "Upper", col = "blue", alpha = 0.3) 
+```

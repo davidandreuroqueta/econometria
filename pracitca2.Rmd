@@ -1,0 +1,43 @@
+---
+title: "Práctica 2"
+author: "David"
+date: "2023-10-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(plm)
+```
+
+# Práctica 2
+
+```{r}
+df = read_excel('datos.xlsx')
+head(df)
+```
+
+```{r}
+df$IPC = as.numeric(df$IPC)
+df$Personas_activas = as.numeric(df$Personas_activas)
+df$Precio_vivienda = as.numeric(df$Precio_vivienda)
+```
+
+Durante nuestro análisis vamos a intentar predecir el precio de la vivivienda en función del IPC y el número de personas activas. Primero vamos a cargar los datos como datos de panel.
+
+```{r}
+df.pdata <- pdata.frame(df, index = c("CCAA","Periodo"), drop.index = FALSE, row.names = TRUE)
+head(df.pdata)
+```
+
+## Modelo pool de datos
+
+```{r}
+reg.pool.plm <- plm(Precio_vivienda ~ Personas_activas + IPC, data = df.pdata, model = "pooling")
+
+summary(reg.pool.plm)
+```
