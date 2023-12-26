@@ -17,6 +17,23 @@ library("plm")
 library("forecast")
 library("dplyr")
 library("tidyr")
+library("ggplot2")
+```
+
+```{r}
+# Función para convertir el trimestre a fecha
+convertir_a_fecha <- function(trimestre) {
+  año <- substr(trimestre, 1, 4)
+  t <- substr(trimestre, 6, 6)
+  
+  # Definir el mes de inicio para cada trimestre
+  mes_inicio <- ifelse(t == "1", "01", 
+                       ifelse(t == "2", "04", 
+                              ifelse(t == "3", "07", "10")))
+  
+  fecha = as.Date(paste(año, mes_inicio, "01", sep = "-"))
+  return(format(fecha, "%Y-%m-%d"))
+}
 ```
 
 # Trabajo Académico
@@ -65,6 +82,161 @@ colnames(data)[colnames(data) == "Coste.salarial.total"] <- "Coste_salarial_tota
 
 head(data)
 ```
+
+## Análisis exploratorio
+
+Lo primero que vamos a hacer es ver el comportamiento de los datos que manejamos. A continuación, observamos la evolución de la media para todas las comunidades de nuestras variables a lo largo del tiempo.
+
+```{r}
+# Calcular la media de cada variable por periodo
+medias_por_periodo <- data %>%
+  group_by(Periodo) %>%
+  summarise(
+    Media_IPC = mean(IPC, na.rm = TRUE),
+    Media_Personas_Activas = mean(Personas_activas, na.rm = TRUE),
+    Media_Precio_Vivienda = mean(Precio_vivienda, na.rm = TRUE),
+    Media_Coste_Salarial_Total = mean(Coste_salarial_total, na.rm = TRUE)
+  )
+
+medias_por_periodo$Periodo <- sapply(as.character(medias_por_periodo$Periodo), convertir_a_fecha)
+medias_por_periodo$Periodo = as.Date(medias_por_periodo$Periodo)
+
+# Crear los gráficos
+p1 <- ggplot(medias_por_periodo, aes(x = Periodo, y = Media_IPC)) +
+  geom_line() +
+  theme_minimal() +
+  ggtitle("Evolución Media del IPC")
+
+p2 <- ggplot(medias_por_periodo, aes(x = Periodo, y = Media_Personas_Activas)) +
+  geom_line() +
+  theme_minimal() +
+  ggtitle("Evolución de Personas Activas")
+
+p3 <- ggplot(medias_por_periodo, aes(x = Periodo, y = Media_Precio_Vivienda)) +
+  geom_line() +
+  theme_minimal() +
+  ggtitle("Evolución del Precio de Vivienda")
+
+p4 <- ggplot(medias_por_periodo, aes(x = Periodo, y = Media_Coste_Salarial_Total)) +
+  geom_line() +
+  theme_minimal() +
+  ggtitle("Evolución del Coste Salarial Total")
+
+# Mostrar los gráficos en un grid
+library(gridExtra)
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+```
+
+1.  **Evolución Media del IPC**: El IPC muestra fluctuaciones a lo largo del tiempo, con un leve aumento en la tendencia. Como medida de la inflación, un aumento en el IPC podría influir en el poder adquisitivo y, por tanto, en la capacidad de los consumidores para comprar viviendas.
+
+2.  **Evolución de Personas Activas**: Hay una tendencia general ascendente en el número de personas activas, lo que puede estar relacionado con una economía en crecimiento. Un aumento en la fuerza laboral activa podría correlacionarse con una mayor demanda de vivienda, ya que más personas podrían tener los medios para comprar o alquilar.
+
+3.  **Evolución del Precio de Vivienda**: Esta línea muestra una tendencia claramente ascendente, lo que indica un incremento constante en el precio de la vivienda. Esta variable es el foco principal del análisis y es la única que no presenta un patrón estacional.
+
+4.  **Evolución del Coste Salarial Total**: El coste salarial total también presenta una tendencia al alza, lo cual podría interpretarse como un aumento en los costos para las empresas. Aunque esta variable no se relaciona directamente con el mercado de la vivienda, los salarios más altos podrían aumentar la capacidad de los trabajadores para adquirir viviendas, afectando así la demanda y, posiblemente, los precios.
+
+Cabe destacar que el patrón estacional del coste salarial y de la evolución del PIB es similar, ambos presentan una forma de M cada año, en cambio la evolución de personas activas es más parecido a una U invertida, con su pico en el segundo o tercer trimestre del año.
+
+```{r}
+# Calcular la media de cada variable por CCAA
+medias_por_CCAA <- data %>%
+  group_by(CCAA) %>%
+  summarise(
+    Media_IPC = mean(IPC, na.rm = TRUE),
+    Media_Personas_Activas = mean(Personas_activas, na.rm = TRUE),
+    Media_Precio_Vivienda = mean(Precio_vivienda, na.rm = TRUE),
+    Media_Coste_Salarial_Total = mean(Coste_salarial_total, na.rm = TRUE)
+  )
+
+p1 <- ggplot(medias_por_CCAA, aes(x = CCAA, y = Media_IPC)) +
+  geom_bar(stat = 'identity') +
+  theme_minimal() +
+  ggtitle("Media del IPC por CCAA") +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank())
+
+
+p2 <- ggplot(medias_por_CCAA, aes(x = CCAA, y = Media_Personas_Activas)) +
+  geom_bar(stat = 'identity') +
+  theme_minimal() +
+  ggtitle("Personas Activas por CCAA") +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank())
+
+p3 <- ggplot(medias_por_CCAA, aes(x = CCAA, y = Media_Precio_Vivienda)) +
+  geom_bar(stat = 'identity') +
+  theme_minimal() +
+  ggtitle("Precio de Vivienda por CCAA") +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank())
+
+p4 <- ggplot(medias_por_CCAA, aes(x = CCAA, y = Media_Coste_Salarial_Total)) +
+  geom_bar(stat = 'identity') +
+  theme_minimal() +
+  ggtitle("Coste Salarial Total por CCAA") +
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank())
+
+# Mostrar los gráficos en un grid
+library(gridExtra)
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+```
+
+1.  **Evolución Media del IPC**: Las barras parecen tener alturas similares, lo que indicaría que el IPC medio no varía significativamente entre las CCAA. Sin embargo, la uniformidad del IPC no implica necesariamente una uniformidad en los precios de la vivienda, ya que pueden estar afectados por factores locales específicos.
+
+2.  **Evolución de Personas Activas**: Hay una variabilidad considerable en el número medio de personas activas entre las CCAA. Esto podría reflejar diferencias en la demografía, el mercado laboral y la economía de las regiones. Las regiones con más personas activas podrían tener una mayor demanda de vivienda, lo que a su vez podría influir en los precios.
+
+3.  **Evolución del Precio de Vivienda**: Las diferencias en las medias del precio de vivienda entre las CCAA son notables y pueden reflejar la variación en la demanda de vivienda, el ingreso disponible y las preferencias de los consumidores. La evolución del precio de la vivienda es el resultado de múltiples factores, incluyendo la economía local, la oferta y demanda de viviendas, y las políticas de vivienda.
+
+4.  **Evolución del Coste Salarial Total**: Al igual que con las personas activas, hay una variación significativa entre las CCAA en el coste salarial total medio. Esto podría indicar diferencias en las estructuras del mercado laboral y los niveles de ingreso, lo que a su vez podría afectar a la capacidad de los individuos para comprar viviendas.
+
+Vamos a ver en más profundidad nuestra variable explicada, el precio de la vivienda.
+
+```{r fig.width=12, fig.height=10}
+# Libraries
+library(tidyverse)
+library(hrbrthemes)
+library(kableExtra)
+options(knitr.table.format = "html")
+library(babynames)
+library(viridis)
+library(DT)
+library(plotly)
+
+# Reordenar las CCAA basándose en la media del precio de la vivienda
+tmp <- ipc_por_CCAA %>%
+  mutate(CCAA = fct_reorder(CCAA, Precio_vivienda, .fun = mean, .desc=TRUE))
+
+tmp <- tmp %>%
+    mutate(name2=CCAA)
+
+p = tmp %>%
+  ggplot( aes(x=Periodo, y=Precio_vivienda)) +
+    geom_line( data=tmp %>% dplyr::select(-CCAA), aes(group=name2), color="grey", size=0.5, alpha=0.5) +
+    geom_line( aes(color=CCAA), color="#69b3a2", size=1.2 )+
+    scale_color_viridis(discrete = TRUE) +
+    theme_ipsum() +
+    theme(
+      legend.position="none",
+      plot.title = element_text(size=14),
+      panel.grid = element_blank()
+    ) +
+    ggtitle("A spaghetti chart of baby names popularity") +
+    facet_wrap(~CCAA)
+p
+```
+
+En este conjunto de gráficos, realizamos una exploración visual de la dinámica del precio de la vivienda en las Comunidades Autónomas de España entre 2017 y 2019. El gráfico facilita una comparación inmediata entre comunidades al resaltar la trayectoria de una comunidad específica en cada panel, mientras se muestra el contexto proporcionado por las demás comunidades en un plano secundario.
+
+Observamos una tendencia general al alza en los precios de la vivienda a lo largo del periodo estudiado, lo que podría estar en línea con un entorno de recuperación económica, condiciones favorables de financiamiento y posiblemente una demanda creciente impulsada por factores demográficos y de mercado.
+
+Algunos puntos destacables incluyen:
+
+-   **Madrid y Cataluña**: Estas comunidades muestran una marcada tendencia alcista en los precios de la vivienda, superando a la mayoría de las otras regiones. Esto podría reflejar su condición de centros económicos y culturales, con una demanda de vivienda robusta.
+
+-   **Variabilidad entre Comunidades**: Aunque la tendencia general es al alza, la variabilidad en la tasa de crecimiento es notable. Comunidades como Extremadura y Castilla-La Mancha muestran un crecimiento más moderado, lo que podría sugerir diferencias en las presiones del mercado local o en la actividad económica.
+
+Estos gráficos muestran que si que existen diferencias entre comunidades a pesar de que la evolución es más o menos igual para toda españa. A continuación, vamos a tratar de resolver las preguntas formuladas anteriormente.
 
 ## Modelos de datos de panel
 
@@ -171,7 +343,7 @@ Como el p-valor \< 0.05, rechazamos H0 y por tanto existirán diferencias entre 
 
 Se puede concluir, que el modelo que mejor explica el precio de la vivienda es el modelo de efectos fijos individuales MCVD.
 
-## Series temporales
+# Series temporales
 
 Para analizar series temporales, la variables que vamos a utilizar es el precio de la vivienda en la comunidad Valenciana. Tenemos los datos de 2007 hasta 2023 por trimestres.
 
@@ -183,30 +355,16 @@ Abrimos el fichero donde se encuentran nuestros datos, en este fichero encontram
 df <- read_excel("./precio_vivienda_trabajo.xlsx")
 ```
 
-Como los trimestres están ordenados en sentido contrario al necesario para trabajar series temporales, cambiamos el orden
-
 ```{r}
+# Como los trimestres están ordenados en sentido contrario al necesario para trabajar series temporales, cambiamos el orden
 # Ordenar las filas por la columna de fechas (B)
 df <- df[order(as.character(df$Periodo)), ]
+head(df)
 ```
 
 ### Análisis exploratorio
 
 ```{r}
-# Función para convertir el trimestre a fecha
-convertir_a_fecha <- function(trimestre) {
-  año <- substr(trimestre, 1, 4)
-  t <- substr(trimestre, 6, 6)
-  
-  # Definir el mes de inicio para cada trimestre
-  mes_inicio <- ifelse(t == "1", "01", 
-                       ifelse(t == "2", "04", 
-                              ifelse(t == "3", "07", "10")))
-  
-  fecha = as.Date(paste(año, mes_inicio, "01", sep = "-"))
-  return(format(fecha, "%Y-%m-%d"))
-}
-
 # Aplicar la función a la columna Periodo
 df$Periodo <- sapply(df$Periodo, convertir_a_fecha)
 df$Periodo = as.Date(df$Periodo)
@@ -258,6 +416,8 @@ dept.lm<-tslm(dept.ts.train~trend+season,lambda=0)
 summary(dept.lm)
 ```
 
+## Arima 1, 1, 1
+
 Vamos a hacer un modelo ARIMA para predecir el índice del precio de la vivienda.
 
 ```{r}
@@ -275,4 +435,15 @@ predicciones_test <- forecast(dept.ts.train.arima, h = length(dept.ts.valid))
 autoplot(predicciones_test, xlab = "Año", ylab = "Índice precio de la vivienda") +
   autolayer(predicciones_test, series = "Lower", col = "blue", alpha = 0.3) +
   autolayer(predicciones_test, series = "Upper", col = "blue", alpha = 0.3) 
+```
+
+## Auto.arima
+
+```{r}
+dept.ts.train.autoarima = auto.arima(dept.ts.train)
+dept.ts.train.autoarima
+```
+
+```{r}
+autoplot(cbind(dept.ts.train.autoarima$fitted,dept.ts), xlab="Año", ylab="Indice precio vivienda")
 ```
