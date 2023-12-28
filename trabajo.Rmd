@@ -192,7 +192,7 @@ grid.arrange(p1, p2, p3, p4, ncol = 2)
 
 Vamos a ver en más profundidad nuestra variable explicada, el precio de la vivienda.
 
-```{r fig.width=12, fig.height=10}
+```{r fig.width=12, fig.height=8}
 # Libraries
 library(tidyverse)
 library(hrbrthemes)
@@ -221,7 +221,7 @@ p = tmp %>%
       plot.title = element_text(size=14),
       panel.grid = element_blank()
     ) +
-    ggtitle("A spaghetti chart of baby names popularity") +
+    ggtitle("Evolución del precio de la vivienda por CCAA") +
     facet_wrap(~CCAA)
 p
 ```
@@ -345,13 +345,14 @@ Se puede concluir, que el modelo que mejor explica el precio de la vivienda es e
 
 # Series temporales
 
-Para analizar series temporales, la variables que vamos a utilizar es el precio de la vivienda en la comunidad Valenciana. Tenemos los datos de 2007 hasta 2023 por trimestres.
+En esta segunda parte del estudio, nos enfocamos en el análisis del precio de la vivienda en la Comunidad Valenciana como una serie temporal, abarcando el período desde 2007 hasta la actualidad. Este período es especialmente significativo, ya que incluye tanto el impacto de la crisis financiera global de 2008 como las fluctuaciones económicas subsiguientes, incluyendo la reciente pandemia de COVID-19. Durante el análisis vamos a descubrir la naturaleza de la serie y vamos a tratar de diseñar un modelo econométrico que prediga el precio de la vivienda. Más concretamente, aplicaremos los análisis de series temporales aprendidos durante el curso y alguno extra para conseguir un modelo de predicción lo más exacto posible.
 
-### Carga de datos
+## Carga de datos
 
-Abrimos el fichero donde se encuentran nuestros datos, en este fichero encontramos por trimestres desde el año 2007 hasta el tercer trimestre del año 2023, el precio de la vivienda en la comunidad valenciana
+Disponemos de los datos empleados en la parte anterior extendidos, en concreto 57 observaciones que corresponden a todos los trimestres desde el año 2007 hasta el tercer trimestre de 2023. Cabe recalcar que no tenemos ningún dato faltante.
 
 ```{r}
+# abrimos el fichero donde se encuentran nuestros datos
 df <- read_excel("./precio_vivienda_trabajo.xlsx")
 ```
 
@@ -362,20 +363,18 @@ df <- df[order(as.character(df$Periodo)), ]
 head(df)
 ```
 
-### Análisis exploratorio
+## Análisis exploratorio
+
+El primer paso de nuestro análisis es comprender la forma de nuestros datos e identificar grandes factores socio-económicos que puedan haber afectado. Ya que es importante identificar eventos excepcionales que puedan alterar los datos y sesgar nuestro modelo.
 
 ```{r}
-# Aplicar la función a la columna Periodo
+# Convertir periodo a fecha
 df$Periodo <- sapply(df$Periodo, convertir_a_fecha)
 df$Periodo = as.Date(df$Periodo)
 ```
 
 ```{r}
 library(ggplot2)
-
-# Convertir la columna 'Periodo' a formato de fecha (aproximando cada trimestre al inicio del mes correspondiente)
-# df$Periodo <- as.Date(substr(df$Periodo, 1,4), format = "%Y%m")
-# df$Periodo <- as.Date(sub("-01", "-04", sub("-02", "-07", sub("-03", "-10", format(df$Periodo, "%Y-%m")))))
 
 # Crear el gráfico
 ggplot(df, aes(x = Periodo, y = Precio_vivienda)) +
@@ -386,34 +385,183 @@ ggplot(df, aes(x = Periodo, y = Precio_vivienda)) +
        x = "Periodo",
        y = "Precio de la Vivienda") +
   geom_vline(xintercept = as.Date("2014-01-01"), linetype = "dashed", color = "blue") +  # Línea vertical en 2012
-  annotate("text", x = as.Date("2014-01-01"), y = max(df$Precio_vivienda), label = "Empieza a remontar el precio", hjust = -0.1, vjust = 1, color = "blue") +
-  labs(title = "Evolución del Precio de la Vivienda en España (2007-2023)",
-       x = "Periodo",
-       y = "Precio de la Vivienda") +
+  annotate("text", x = as.Date("2014-01-01"), y = max(df$Precio_vivienda), label = "Empieza a remontar el precio", hjust = -0.05, vjust = 1, color = "blue") +
+  geom_vline(xintercept = as.Date("2020-03-12"), linetype = "dashed", color = "darkgreen") +  # Línea vertical en 2012
+  annotate("text", x = as.Date("2020-03-12"), y = max(df$Precio_vivienda), label = "COVID-19", hjust = -0.1, vjust = 1, color = "darkgreen") +
   theme_minimal() +
   scale_x_date(date_breaks = "1 year", date_labels = "%Y") # Formato del eje X
 ```
 
-### Modelado de series temporales
+La línea continua representa la serie temporal del precio, evidenciando tres momentos críticos en el mercado inmobiliario español, marcados por líneas verticales punteadas y anotaciones explicativas.
+
+Primero, la línea roja punteada señala el año 2008, coincidiendo con el estallido de la burbuja inmobiliaria. Aquí, se observa un pico seguido de un descenso abrupto, reflejando la caída de precios post-crisis financiera. Este fenómeno marcó el comienzo de un periodo recesivo en el que los precios tocaron su punto más bajo en 2014.
+
+Posteriormente, la línea azul punteada 2014 sugieren un punto de inflexión donde se empieza a percibir una recuperación gradual de los precios. Esta tendencia ascendente indica un fortalecimiento del mercado que podría estar vinculado a mejoras en la economía española y un incremento en la demanda de vivienda.
+
+Finalmente, la línea punteada verde oscura resalta el impacto de la pandemia de COVID-19 en marzo de 2020. Contrario a lo esperado, después de un breve periodo de estancamiento, el gráfico muestra un aumento sorprendente en los precios, lo que podría deberse a una combinación de factores como políticas de estímulo, cambios en las preferencias de vivienda post-confinamiento, y una bajada en las tasas de interés.
+
+Este análisis gráfico sirve como una herramienta esencial para comprender la dinámica del mercado inmobiliario español. A partir de lo que vemos visto podríamos dividir la serie temporal en tres trozos separados por el estallido de la burbuja y cuando empieza a remontar el precio. Omitiremos el efecto de la pandemia porque no parece influir de manera notable en la tendencia del precio.
+
+## Modelado de series temporales
+
+Visto el comportamiento de los datos vamos a abordar el análisis desde dos perspectivas. En primera instancia vamos a tratar de crear un modelo que sea capaz de predecir el precio de la vivienda entrenandolo con todos los datos que tenemos a nuestra disposición. Para ello, vamos a emplear un modelo ARIMA y calcularemos los mejores parámetros con la función auto.arima de forecast.
+
+Por otra parte, trataremos de conseguir un modelo de predicción entrenandolo solo con los datos a partir de 2014, este modelo eliminará el sesgo provocado por la burbuja y puede que sea mejor para predicciones a medio plazo.
+
+### Modelo con todos los datos
+
+Dada la forma de los datos podríamos tratar de ajustar el modelo con una función seno o coseno, sin embargo, además de no conocer su implementación, la velocidad de bajada es mayor a la velocidad de subida del precio. En carencia de una función matemática para aproximar optamos por un modelo ARIMA.
 
 ```{r}
-# Cogemos los datos desde 2014
-df = df %>%
-  filter(Periodo >= as.Date("2014-01-01"))
+df_completo = df
 
-dept.ts<-ts(df$Precio_vivienda, start=c(1,1), end=c(10,3), freq = 4)
+df_completo.ts<-ts(df_completo$Precio_vivienda, start=c(1,1), end=c(17,3), freq = 4)
 
-autoplot(dept.ts)
+autoplot(df_completo.ts)
+```
+
+Vamos a separar nuestros datos en entrenamiento y test para luego hacer la validación. Los datos test llegan hasta el primer trimestre de 2022.
+
+```{r}
+df_completo.ts.train<-window(df_completo.ts,start=c(1,1),end=c(16,1))
+df_completo.ts.valid<-window(df_completo.ts,start=c(16,2),end=c(17,3))
+
+
+df_completo.autoarima<-auto.arima(df_completo.ts.train)
+
+summary(df_completo.autoarima)
+```
+
+A continuación, dado que no hemos visto en profundidad este tipo de modelo, añadimos la interpretación que ha hecho chat GPT-4 de los parametros resultantes.
+
+1.  **Especificación del Modelo ARIMA**: La serie se ha modelado con un ARIMA(2,2,0)(0,0,1)[4]. Esto significa que el modelo es un ARIMA estacional con:
+
+    -   **AR(2)**: Dos términos autoregresivos en la parte no estacional del modelo, lo que sugiere que el valor actual de la serie está relacionado linealmente con los dos valores anteriores.
+
+    -   **I(2)**: Dos diferencias no estacionales, indicando que es necesario diferenciar dos veces la serie para hacerla estacionaria.
+
+    -   **MA(0)**: Ningún término de medias móviles en la parte no estacional, lo que indica que los errores (shocks o novedades) no se propagan a valores futuros.
+
+    -   **SMA(1)**: Un término de medias móviles en la parte estacional con periodicidad 4, que refleja la influencia del error (shock) de un valor pasado estacionalmente en los valores futuros.
+
+    -   **Periodicidad [4]**: El modelo identifica una estacionalidad en los datos con una periodicidad de 4, lo que es común en datos trimestrales.
+
+2.  **Coeficientes**:
+
+    -   **ar1 (-0.6533)** y **ar2 (-0.2343)**: Son los coeficientes de los términos autoregresivos. Ambos son negativos, lo que indica una relación inversa entre los precios actuales y los anteriores. Los errores estándar asociados (s.e.) son relativamente pequeños, lo que sugiere que los coeficientes son significativamente diferentes de cero.
+
+    -   **sma1 (0.5402)**: Es el coeficiente del término de medias móviles estacionales. Un valor positivo sugiere que hay un efecto directo del error de un valor pasado en el mismo trimestre del año anterior.
+
+3.  **Medidas de Rendimiento**:
+
+    -   **sigma\^2 (2.484)**: Varianza del error del modelo, cuánto varían los residuos alrededor de cero.
+
+    -   **log likelihood (-109.86)**: Una medida de qué tan bien el modelo se ajusta a los datos; cuanto más alto, mejor.
+
+    -   **AIC (227.72)** y **BIC (236.03)**: Criterios de información que equilibran la bondad del ajuste del modelo con su complejidad. El modelo con el valor más bajo es preferible. AICc es una versión corregida del AIC para muestras pequeñas.
+
+4.  **Error del Conjunto de Entrenamiento**:
+
+    -   **ME (Media del Error)**: Casi cero, lo que indica que no hay sesgo en los residuos.
+
+    -   **RMSE (Raíz del Error Cuadrático Medio)** y **MAE (Error Absoluto Medio)**: Medidas de la diferencia entre los valores predichos y los observados. Mientras más bajos, mejor el ajuste del modelo.
+
+    -   **MPE (Error Porcentual Medio)** y **MAPE (Error Porcentual Absoluto Medio)**: Proporcionan una perspectiva del error en términos porcentuales. Un MAPE de 1.02% es bastante bajo, indicando buen ajuste.
+
+    -   **MASE (Error Absoluto Medio Escalado)**: Comparado con un modelo ingenuo, un MASE \< 1 sugiere que el modelo tiene un buen rendimiento predictivo.
+
+    -   **ACF1 (Primera Autocorrelación de los Residuos)**: Cercano a cero, lo que indica que no hay autocorrelación en los residuos y que el modelo está capturando adecuadamente la estructura temporal de los datos.
+
+En resumen, los resultados indican que el modelo ARIMA(2,2,0)(0,0,1)[4] ajustado parece ser adecuado y capaz de capturar la dinámica de la serie temporal del precio de la vivienda. Los errores son bajos, y no parece haber un sesgo sistemático en las predicciones del modelo.
+
+```{r}
+autoplot(cbind(df_completo.autoarima$fitted,df_completo.ts), xlab="Año", ylab="Indice precio vivienda")
+```
+
+El gráfico presenta la comparación entre los valores reales del índice de precios de la vivienda (en azul) y las predicciones generadas por el modelo ARIMA(2,2,0)(0,0,1)[4] (en rojo) a lo largo del tiempo. Se observa una estrecha alineación entre ambas series, indicando un ajuste adecuado del modelo a los datos históricos.
+
+Las predicciones del modelo capturan las tendencias y los cambios de dirección en el índice de precios, reflejando tanto el pico pre-crisis como el posterior declive y recuperación. Podemos observar como los periodos con mayor error son aquellos en los que se produce un cambio de tendencia, como en el punto en el que empiezan a remontar los precios de la vivienda
+
+```{r}
+library("TSPred")
+
+df_completo.autoarima.pred.valid <- forecast(df_completo.autoarima, h = length(df_completo.ts.valid))
+
+plotarimapred(df_completo.ts, df_completo.autoarima.pred.valid, xlim=c(1,18), range.percent = 0.001)
+```
+
+La línea de predicción parece iniciar cerca de la continuidad de la serie real, lo que indica un buen ajuste inicial del modelo. Sin embargo, el área de confianza se amplía progresivamente con el tiempo, indicando un aumento en la incertidumbre de las predicciones a medida que nos alejamos del último punto conocido. Esto se debe a que las predicciones de los modelos ARIMA se basan en la suposición de que las condiciones pasadas, reflejadas en la estructura autoregresiva y de medias móviles, se mantendrán en el futuro.
+
+Con cada nuevo paso de predicción, los errores se acumulan y la base de información del modelo para realizar la predicción siguiente se debilita, ya que se basa cada vez más en predicciones en lugar de en observaciones reales. Este fenómeno es conocido como 'decadencia de la predicción'. Además, eventos futuros no anticipados por el modelo, cambios en la tendencia subyacente, o el impacto de choques externos que no se han incorporado en el modelo histórico, pueden contribuir a una disminución en la precisión de las predicciones a largo plazo.
+
+```{r}
+bondad = function(real, media_real, aprox) {
+  errores = real - aprox
+
+  # Calcula el RMSE
+  rmse <- sqrt(mean(errores^2))
+  rmse
+  
+  # Calculate the total sum of squares (SST)
+  sst <- sum((real - media_real)^2)
+  
+  # Calculate the residual sum of squares (SSE)
+  sse <- sum((real - aprox)^2)
+  
+  # R-squared is 1 - (SSE/SST)
+  r_squared <- 1 - (sse/sst)
+  r_squared
+  
+  print(paste('RMSE:', rmse))
+  print(paste('R^2:', r_squared))
+}
+
+bondad(df_completo.ts.valid, mean(df_completo.ts), df_completo.autoarima.pred.valid$mean)
+```
+
+Como podemos ver tanto el RMSE como el R\^2 son muy malos debido a que estamos intentando predecir a muchos trimestres vista. Por ello vamos ha crear un algoritmo que calcule a un mes vista y vaya reentrenando el modelo cada vez que le entra un dato nuevo. Esto tiene sentido porque, a pesar de estar asumiendo un coste computacional importante solo tenemos un dato por trimestre, por lo tanto nos lo podemos permitir. Pero, si que vamos a respetar el tipo de ARIMA sacado anteriormente (2, 2, 0) (0, 0, 1) [4]
+
+```{r}
+arima_pred1 = function(ts, trimestre) {
+  
+  ts.train = window(ts,start=c(1,1),end=trimestre)
+  arima = Arima(ts.train, order = c(2, 2, 0), seasonal = list(order = c(0, 0, 1),  period = 4))
+  pred = forecast(arima, h = 1)
+  return(pred)
+}
 ```
 
 ```{r}
-dept.ts.train<-window(dept.ts,start=c(1,1),end=c(9,1))
-dept.ts.valid<-window(dept.ts,start=c(9,2),end=c(10,3))
+autoarima.pred_h1 <- data.frame(
+  "Point Forecast" = numeric(0),
+  "Lo 80" = numeric(0),
+  "Hi 80" = numeric(0),
+  "Lo 95" = numeric(0),
+  "Hi 95" = numeric(0)
+)
+ini_year = 14
+end_year = 17
 
+for (y in ini_year:end_year){
+  for (t in 1:4){
+    if (!(y == 17 && t > 2)){
+      p = arima_pred1(df_completo.ts, c(y, t))
+      autoarima.pred_h1[nrow(autoarima.pred_h1)+1,] = as.data.frame(p)
+      }
+    }
+}
+autoarima.pred_h1
+autoarima.pred_h1.ts = ts(autoarima.pred_h1$Point.Forecast, start = c(ini_year, 2), end = c(end_year, 3), frequency = 4)
+```
 
-dept.lm<-tslm(dept.ts.train~trend+season,lambda=0)
+```{r}
+autoplot(cbind(autoarima.pred_h1.ts,df_completo.ts), xlab="Año", ylab="Indice precio vivienda")
+```
 
-summary(dept.lm)
+Para comprobar bien el funcionamiento del modelo vamos a coger datos a coger como datos test el precio de la vivienda a partir de 2020 para ver como el modelo es capaz de predecir de manera bastante correcta el precio a un mes vista. Vamos a comprobar la bondad del modelo.
+
+```{r}
+bondad(df_completo.ts.valid, mean(df_completo.ts), autoarima.pred_h1.ts) 
 ```
 
 ## Arima 1, 1, 1
@@ -446,4 +594,17 @@ dept.ts.train.autoarima
 
 ```{r}
 autoplot(cbind(dept.ts.train.autoarima$fitted,dept.ts), xlab="Año", ylab="Indice precio vivienda")
+```
+
+```{r}
+predicciones_test <- forecast(dept.ts.train.autoarima, h = length(dept.ts.valid))
+
+
+autoplot(predicciones_test, xlab = "Año", ylab = "Índice precio de la vivienda") +
+  autolayer(predicciones_test, series = "Lower", col = "blue", alpha = 0.3) +
+  autolayer(predicciones_test, series = "Upper", col = "blue", alpha = 0.3) 
+```
+
+```{r}
+autoplot(cbind(predicciones_test$mean,dept.ts), xlab="Año", ylab="Indice precio vivienda")
 ```
