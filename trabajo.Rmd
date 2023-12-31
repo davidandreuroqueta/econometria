@@ -423,13 +423,20 @@ autoplot(df_completo.ts)
 Vamos a separar nuestros datos en entrenamiento y test para luego hacer la validación. Los datos test llegan hasta el primer trimestre de 2022.
 
 ```{r}
-df_completo.ts.train<-window(df_completo.ts,start=c(1,1),end=c(16,1))
-df_completo.ts.valid<-window(df_completo.ts,start=c(16,2),end=c(17,3))
+completo_train_ends = c(16,1)
+completo_valid_starts = c(16,2)
+completo_valid_ends = c(17,3)
 
+df_completo.ts.train<-window(df_completo.ts,start=c(1,1),end=completo_train_ends)
+df_completo.ts.valid<-window(df_completo.ts,start=completo_valid_starts,end=completo_valid_ends)
+```
 
+#### Predicción a medio plazo
+
+```{r}
 df_completo.autoarima<-auto.arima(df_completo.ts.train)
 
-summary(df_completo.autoarima)
+df_completo.autoarima
 ```
 
 A continuación, dado que no hemos visto en profundidad este tipo de modelo, añadimos la interpretación que ha hecho chat GPT-4 de los parametros resultantes.
@@ -494,16 +501,25 @@ La línea de predicción parece iniciar cerca de la continuidad de la serie real
 
 Con cada nuevo paso de predicción, los errores se acumulan y la base de información del modelo para realizar la predicción siguiente se debilita, ya que se basa cada vez más en predicciones en lugar de en observaciones reales. Este fenómeno es conocido como 'decadencia de la predicción'. Además, eventos futuros no anticipados por el modelo, cambios en la tendencia subyacente, o el impacto de choques externos que no se han incorporado en el modelo histórico, pueden contribuir a una disminución en la precisión de las predicciones a largo plazo.
 
+Para analizar lo bueno que es un modelo nos fijaremos en los datos test. A continación analizamos los parámetros de bondad del modelo. Para este trabajo vamos a utilizar un R^2^ un poco distinto, en vez de ser el porcentaje de variabilidad que explica el modelo con respecto a su media, será con respecto a una predicción ingenua. Para calcularlo modificaremos la suma de cuadrados total, en lugar de calcularla con la media lo haremos con la última predicción de los datos test. De esta forma, podremos comparar fácilmente cuanto mejor es nuestro modelo a una predicción ingenua.
+
 ```{r}
-bondad = function(real, media_real, aprox) {
+bondad = function(real, comparacion, aprox) {
   errores = real - aprox
 
   # Calcula el RMSE
   rmse <- sqrt(mean(errores^2))
   rmse
   
+  # Calcula MAE
+  mae <- mean(abs(errores))
+  
+  # Calcula MAPE
+  mape <- mean(abs((errores) / real)) * 100
+
+
   # Calculate the total sum of squares (SST)
-  sst <- sum((real - media_real)^2)
+  sst <- sum((real - comparacion)^2)
   
   # Calculate the residual sum of squares (SSE)
   sse <- sum((real - aprox)^2)
@@ -512,99 +528,258 @@ bondad = function(real, media_real, aprox) {
   r_squared <- 1 - (sse/sst)
   r_squared
   
-  print(paste('RMSE:', rmse))
-  print(paste('R^2:', r_squared))
+  print(paste('MAE:', round(mae, 6)))
+  print(paste('MAPE:', round(mape, 6)))
+  print(paste('RMSE:', round(rmse, 6)))
+  print(paste('R^2:', round(r_squared, 6)))
 }
 
-bondad(df_completo.ts.valid, mean(df_completo.ts), df_completo.autoarima.pred.valid$mean)
+ultima_observacion_train = (completo_train_ends[1] -1) * 4 + completo_train_ends[2]
+
+bondad(df_completo.ts.valid, df_completo.ts[ultima_observacion_train], df_completo.autoarima.pred.valid$mean)
 ```
 
-Como podemos ver tanto el RMSE como el R\^2 son muy malos debido a que estamos intentando predecir a muchos trimestres vista. Por ello vamos ha crear un algoritmo que calcule a un mes vista y vaya reentrenando el modelo cada vez que le entra un dato nuevo. Esto tiene sentido porque, a pesar de estar asumiendo un coste computacional importante solo tenemos un dato por trimestre, por lo tanto nos lo podemos permitir. Pero, si que vamos a respetar el tipo de ARIMA sacado anteriormente (2, 2, 0) (0, 0, 1) [4]
+1.  **MAE: 7.538861** - Este valor indica que, en promedio, nuestras predicciones se desvían por aproximadamente 7.54 unidades del valor real. Este nivel de error, dependiendo de la escala de los precios de vivienda, puede ser considerado como moderado.
+
+2.  **MAPE: 5.609502%** - El error porcentual absoluto medio muestra que hay un error del 5.61% en nuestras predicciones. Este indicador es útil para comprender el error en términos relativos y ofrece una perspectiva de la precisión del modelo independientemente de la escala de los datos.
+
+3.  **RMSE: 8.428808** - La raíz del error cuadrático medio sugiere que las predicciones suelen estar a unas 8.43 unidades de distancia del valor real. Dado que el RMSE penaliza más los errores grandes, este valor nos indica que hay variabilidad en la precisión de las predicciones.
+
+4.  **R\^2: -0.871797** - Con la nueva definición, este R\^2 compara el modelo con una predicción ingenua. Aunque sigue siendo negativo, este valor indica que el modelo no está superando significativamente una predicción simple basada en la última observación. Esto puede ser una señal de que el modelo necesita mejoras, pero no necesariamente sugiere una inadecuación tan grave como lo haría un R\^2 negativo en el cálculo tradicional.
+
+Por lo tanto, estos resultados sugieren la necesidad de una revisión y posible ajuste del modelo, o la exploración de enfoques alternativos que puedan manejar mejor la incertidumbre y los cambios en las tendencias a largo plazo. Visto que con todos los datos el modelo ARIMA para medio plazo no es recomendable pasamos a la predicción a corto plazo.
+
+#### Predicción a corto plazo
+
+Vamos ha crear un algoritmo que calcule a un trimestre vista y vaya reentrenando el modelo cada vez que le entra un dato nuevo. Esto tiene sentido porque, a pesar de estar asumiendo un coste computacional importante solo tenemos un dato por trimestre, por lo tanto nos lo podemos permitir. Pero, si que vamos a respetar el tipo de ARIMA sacado anteriormente (2, 2, 0) (0, 0, 1) [4].
 
 ```{r}
+# Creamos una función que calcula el modelo y hace la prediccón del siguiente trimestre al índicado.
 arima_pred1 = function(ts, trimestre) {
-  
   ts.train = window(ts,start=c(1,1),end=trimestre)
   arima = Arima(ts.train, order = c(2, 2, 0), seasonal = list(order = c(0, 0, 1),  period = 4))
   pred = forecast(arima, h = 1)
   return(pred)
 }
-```
 
-```{r}
-autoarima.pred_h1 <- data.frame(
-  "Point Forecast" = numeric(0),
-  "Lo 80" = numeric(0),
-  "Hi 80" = numeric(0),
-  "Lo 95" = numeric(0),
-  "Hi 95" = numeric(0)
-)
-ini_year = 14
-end_year = 17
-
-for (y in ini_year:end_year){
-  for (t in 1:4){
-    if (!(y == 17 && t > 2)){
-      p = arima_pred1(df_completo.ts, c(y, t))
-      autoarima.pred_h1[nrow(autoarima.pred_h1)+1,] = as.data.frame(p)
-      }
-    }
+# Creamos una función genérica que nos devuelva las predicciones y los intervalos de confianza dado un intervalo de validazión
+pred1 = function(df, fun, train_starts, valid_ends) {
+  pred_h1 <- data.frame(
+    "Point Forecast" = numeric(0),
+    "Lo 80" = numeric(0),
+    "Hi 80" = numeric(0),
+    "Lo 95" = numeric(0),
+    "Hi 95" = numeric(0)
+  )
+  ini_year = train_starts[1]
+  end_year = valid_ends[1]
+  for (y in ini_year:end_year){
+    for (t in 1:4){
+      if ((!(y == valid_ends[1] && t > valid_ends[2]-1)) &&
+           (!(y == train_starts[1] && t < train_starts[2]))){
+        p = fun(df, c(y, t))
+        pred_h1[nrow(pred_h1)+1,] = as.data.frame(p)
+        }
+     }
+  }
+  pred_h1
 }
-autoarima.pred_h1
-autoarima.pred_h1.ts = ts(autoarima.pred_h1$Point.Forecast, start = c(ini_year, 2), end = c(end_year, 3), frequency = 4)
 ```
 
 ```{r}
-autoplot(cbind(autoarima.pred_h1.ts,df_completo.ts), xlab="Año", ylab="Indice precio vivienda")
+autoarima.pred_h1 = pred1(df_completo.ts, arima_pred1, completo_train_ends, completo_valid_ends)
+autoarima.pred_h1.ts = ts(autoarima.pred_h1$Point.Forecast, start = completo_valid_starts, end = completo_valid_ends, frequency = 4)
+
+autoplot(cbind(df_completo.autoarima$fitted,df_completo.ts, autoarima.pred_h1.ts), xlab="Año", ylab="Indice precio vivienda") +
+  scale_color_manual(values = c("#E8943A", "#566B8A", "#E34836"))
+
+bondad(df_completo.ts.valid, mean(df_completo.ts.valid), autoarima.pred_h1.ts) 
 ```
 
-Para comprobar bien el funcionamiento del modelo vamos a coger datos a coger como datos test el precio de la vivienda a partir de 2020 para ver como el modelo es capaz de predecir de manera bastante correcta el precio a un mes vista. Vamos a comprobar la bondad del modelo.
+Al analizar la imagen del rendimiento de nuestro modelo, la línea roja que representa las predicciones de test muestra un ajuste razonable a los datos reales, aunque hay margen para mejorar. Los parámetros de desempeño del modelo son:
+
+-   MAE (Error Absoluto Medio): 2.042988, que indica la diferencia media entre los valores predichos y los reales.
+
+-   MAPE (Error Porcentual Absoluto Medio): 1.522266%, que refleja el porcentaje medio de error en las predicciones.
+
+-   RMSE (Raíz del Error Cuadrático Medio): 2.23927, proporcionando una medida de la calidad del modelo en cuanto a la variabilidad de los errores de predicción.
+
+-   R\^2 (Coeficiente de Determinación): 0.333522, lo cual sugiere que nuestro modelo explica aproximadamente un 33.35% de variabilidad con respecto a un modelo ingenuo.
+
+Estos indicadores de desempeño nos muestran que, aunque las predicciones son generalmente cercanas a los valores reales, debemos trabajar en la mejora del modelo para aumentar la precisión y la capacidad explicativa del mismo.
+
+### Modelo con los datos a partir de 2014
+
+Después de haber analizado modelos que incluyen el rango completo de datos históricos, ahora vamos a enfocarnos en los datos a partir de 2014. Esta fecha marca un hito significativo, ya que corresponde al punto más bajo en el precio de alquiler antes de observar una tendencia ascendente.
+
+Al limitar nuestro análisis a este periodo de tiempo más reciente, esperamos no solo simplificar la complejidad del modelo sino también aumentar la precisión de nuestras predicciones al concentrarnos en un mercado inmobiliario que ha mostrado una dinámica distinta en comparación con el comportamiento previo a 2014. Este enfoque segmentado nos permitirá ajustar mejor nuestros modelos a las tendencias actuales.
+
+Continuamos con nuestro plantemiento de conseguir predicciones a medio y a corto plazo, pudiendo suponer dos modelos distintos.
 
 ```{r}
-bondad(df_completo.ts.valid, mean(df_completo.ts), autoarima.pred_h1.ts) 
-```
-
-## Arima 1, 1, 1
-
-Vamos a hacer un modelo ARIMA para predecir el índice del precio de la vivienda.
-
-```{r}
-dept.ts.train.arima = Arima(dept.ts.train, order = c(1, 1, 1))
-summary(dept.ts.train.arima)
-autoplot(cbind(dept.ts.train.arima$fitted,dept.ts), xlab="Año", ylab="Indice precio vivienda")
-```
-
-Vamos a ver como hace la predicción:
-
-```{r}
-predicciones_test <- forecast(dept.ts.train.arima, h = length(dept.ts.valid))
-
-
-autoplot(predicciones_test, xlab = "Año", ylab = "Índice precio de la vivienda") +
-  autolayer(predicciones_test, series = "Lower", col = "blue", alpha = 0.3) +
-  autolayer(predicciones_test, series = "Upper", col = "blue", alpha = 0.3) 
-```
-
-## Auto.arima
-
-```{r}
-dept.ts.train.autoarima = auto.arima(dept.ts.train)
-dept.ts.train.autoarima
-```
-
-```{r}
-autoplot(cbind(dept.ts.train.autoarima$fitted,dept.ts), xlab="Año", ylab="Indice precio vivienda")
+# Definimos ciertas variables genéricas de nuestro análisis
+train_ends = c(9, 1)
+valid_starts = c(9, 2)
+valid_ends = c(10, 3)
 ```
 
 ```{r}
-predicciones_test <- forecast(dept.ts.train.autoarima, h = length(dept.ts.valid))
+df_partido = df %>% filter(year(Periodo) >= 2014)
 
+df_partido.ts<-ts(df_partido$Precio_vivienda, start=c(1,1), end=c(10,3), freq = 4)
 
-autoplot(predicciones_test, xlab = "Año", ylab = "Índice precio de la vivienda") +
-  autolayer(predicciones_test, series = "Lower", col = "blue", alpha = 0.3) +
-  autolayer(predicciones_test, series = "Upper", col = "blue", alpha = 0.3) 
+autoplot(df_partido.ts)
 ```
 
 ```{r}
-autoplot(cbind(predicciones_test$mean,dept.ts), xlab="Año", ylab="Indice precio vivienda")
+df_partido.ts.train<-window(df_partido.ts,start = c(1,1), end = train_ends)
+df_partido.ts.valid<-window(df_partido.ts,start = valid_starts, end = valid_ends)
 ```
+
+#### Predicción a medio plazo
+
+En primer lugar ajustaremos una serie de funciones matemáticas que nos permitan modelar y entender la evolución del precio de la vivienda durante el periodo que comienza en 2014. Consideraremos tres tipos de modelos de regresión para capturar la naturaleza de los datos: lineal, cuadrático y exponencial cuadrático. Seguidamente, al igual que hicimos con todos los datos entrenaremos un modelo ARIMA para ver si es capaz de mejorar las predicciones de los modelos funcionales.
+
+**Modelo Lineal**: Este será nuestro punto de partida, proporcionando una línea recta que representa la tendencia general de los precios de la vivienda con el tiempo. La simplicidad del modelo lineal lo hace útil para obtener una vista general y puede servir como una herramienta de comparación para modelos más complejos.
+
+```{r}
+df_partido.lm<-tslm(df_partido.ts.train~trend)
+
+summary(dept.lm)
+```
+
+```{r}
+autoplot(cbind(df_partido.lm$fitted,df_partido.ts), xlab="Año", ylab="Indice precio vivienda")
+```
+
+```{r}
+df_partido.lm.pred.valid <- forecast(df_partido.lm, h = length(df_partido.ts.valid))
+
+plotarimapred(df_partido.ts, df_partido.lm.pred.valid, xlim=c(1,valid_ends[1]+1), range.percent = 0.001)
+```
+
+```{r}
+bondad(df_partido.ts.valid, mean(df_partido.ts.valid), df_partido.lm.pred.valid$mean)
+```
+
+**Modelo Cuadrático**: Ampliando el modelo lineal, el modelo cuadrático introducirá un término de segundo grado, permitiéndonos capturar no solo la tendencia, sino también la aceleración o desaceleración de los precios a lo largo del tiempo. Esto podría reflejar cambios en el mercado que no son evidentes en un ajuste lineal.
+
+```{r}
+df_partido.lm2<-tslm(df_partido.ts.train~ I(trend^2) + trend)
+
+summary(df_partido.lm2)
+
+# Ajuste de datos entrenamiento
+autoplot(cbind(df_partido.lm2$fitted,df_partido.ts), xlab="Año", ylab="Indice precio vivienda")
+
+# Ajuste datos de test
+df_partido.lm2.pred.valid <- forecast(df_partido.lm2, h = length(df_partido.ts.valid))
+
+plotarimapred(df_partido.ts, df_partido.lm2.pred.valid, xlim=c(1,valid_ends[1]+1), range.percent = 0.001)
+
+bondad(df_partido.ts.valid, mean(df_partido.ts.valid), df_partido.lm2.pred.valid$mean)
+```
+
+**Modelo Exponencial Cuadrático**: Finalmente, el modelo exponencial cuadrático es considerablemente más complejo y nos ayudará a entender comportamientos no lineales en los datos. Esta función puede ser adecuada para modelar crecimientos que se aceleran a un ritmo no constante, lo que podría ocurrir en un mercado inmobiliario que experimenta cambios rápidos debido a factores económicos, demográficos o políticos.
+
+```{r}
+df_partido.exp<-tslm(df_partido.ts.train~I(trend^2) + trend, lambda = 0)
+
+summary(df_partido.exp)
+
+# Ajuste de datos entrenamiento
+autoplot(cbind(df_partido.exp$fitted,df_partido.ts), xlab="Año", ylab="Indice precio vivienda")
+
+# Ajuste datos de test
+df_partido.exp.pred.valid <- forecast(df_partido.exp, h = length(df_partido.ts.valid))
+
+plotarimapred(df_partido.ts, df_partido.exp.pred.valid, xlim=c(1,valid_ends[1]+1), range.percent = 0.001)
+
+bondad(df_partido.ts.valid, mean(df_partido.ts.valid), df_partido.exp.pred.valid$mean)
+```
+
+**Modelo ARIMA**
+
+```{r}
+df_partido.autoarima<-auto.arima(df_partido.ts.train)
+
+df_partido.autoarima
+
+# Ajuste de datos entrenamiento
+autoplot(cbind(df_partido.autoarima$fitted,df_partido.ts), xlab="Año", ylab="Indice precio vivienda")
+
+# Ajuste datos de test
+df_partido.autoarima.pred.valid <- forecast(df_partido.autoarima, h = length(df_partido.ts.valid))
+
+plotarimapred(df_partido.ts, df_partido.autoarima.pred.valid, xlim=c(1,valid_ends[1]+1), range.percent = 0.001)
+
+bondad(df_partido.ts.valid, mean(df_partido.ts.valid), df_partido.autoarima.pred.valid$mean)
+```
+
+#### Predicciones a corto plazo
+
+Ahora vamos a ver como se comporta este modelo para predecir a un trimestre vista con una regresión cuadrática.
+
+```{r}
+cuad_pred1 = function(ts, trimestre) {
+  df_partido.ts.train = window(df_partido.ts,start=c(1,1),end=trimestre)
+  df_partido.lm2 = tslm(df_partido.ts.train~ I(trend^2) + trend)
+  pred = forecast(df_partido.lm2, h = 1)
+  pred
+}
+
+cuad.pred_h1 = pred1(df_completo.ts, cuad_pred1, train_ends, valid_ends)
+
+cuad.pred_h1.ts = ts(cuad.pred_h1$Point.Forecast, start = valid_starts, end = valid_ends, frequency = 4)
+
+
+# Ajuste de datos entrenamiento
+autoplot(cbind(df_partido.lm2$fitted.values,df_partido.ts, cuad.pred_h1.ts), xlab="Año", ylab="Indice precio vivienda") +
+  scale_color_manual(values = c("#E8943A", "#566B8A", "#E34836"))
+
+bondad(df_partido.ts.valid, mean(df_partido.ts.valid), cuad.pred_h1.ts)
+```
+
+Exponencial cuadrática
+
+```{r}
+exp_pred1 = function(ts, trimestre) {
+  df_partido.ts.train = window(df_partido.ts,start=c(1,1),end=trimestre)
+  df_partido.lm2 = tslm(df_partido.ts.train~ I(trend^2) + trend, lambda = 0)
+  pred = forecast(df_partido.lm2, h = 1)
+  pred
+}
+
+exp.pred_h1 = pred1(df_partido.ts, exp_pred1, train_ends, valid_ends)
+exp.pred_h1.ts = ts(exp.pred_h1$Point.Forecast, start = valid_starts, end = valid_ends, frequency = 4)
+
+
+# Ajuste de datos entrenamiento
+autoplot(cbind(df_partido.lm2$fitted.values,df_partido.ts, exp.pred_h1.ts), xlab="Año", ylab="Indice precio vivienda") +
+  scale_color_manual(values = c("#E8943A", "#566B8A", "#E34836"))
+
+bondad(df_partido.ts.valid, mean(df_partido.ts.valid), exp.pred_h1.ts)
+```
+
+Arima:
+
+```{r}
+arima2_pred1 = function(ts, trimestre) {
+  df_partido.ts.train = window(df_partido.ts,start=c(1,1),end=trimestre)
+  modelo = Arima(df_partido.ts.train, order = c(0, 1, 0))
+  pred = forecast(modelo, h = 1)
+  pred
+}
+
+exp.pred_h1 = pred1(df_partido.ts, arima2_pred1, train_ends, valid_ends)
+exp.pred_h1.ts = ts(exp.pred_h1$Point.Forecast, start = valid_starts, end = valid_ends, frequency = 4)
+
+
+# Ajuste de datos entrenamiento
+autoplot(cbind(df_partido.autoarima$fitted, df_partido.ts, exp.pred_h1.ts), xlab="Año", ylab="Indice precio vivienda") +
+  scale_color_manual(values = c("#E8943A", "#566B8A", "#E34836"))
+
+bondad(df_partido.ts.valid, mean(df_partido.ts.valid), exp.pred_h1.ts)/
+```
+
+## Elección de modelos
