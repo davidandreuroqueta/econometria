@@ -1,8 +1,11 @@
 ---
 title: "Trabajo"
-author: "Hector"
+author: "Héctor García Hernández y David Andreu Roqueta"
 date: "2023-10-08"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -11,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Librerias utilizadas
 
-```{r}
+```{r echo=FALSE}
 #install.packages("patchwork")
 library("readxl")
 library("plm")
@@ -39,7 +42,11 @@ convertir_a_fecha <- function(trimestre) {
 
 # Introducción
 
-Hoy en día la accesibilidad a la vivienda es un problema presente en nuestra sociedad. Nosotros vamos a intentar analizarlo desde el punto de vista del precio de la vivienda.
+En España, la situación actual del mercado inmobiliario plantea un desafío considerable para los jóvenes que buscan comprar su primera vivienda. En un contexto de elevadas tasas de paro y dificultades para ahorrar, sumado a la rigidez en las condiciones de financiación hipotecaria, la edad promedio para adquirir una primera vivienda se ha situado en los 31 años. Esta situación refleja no solo las barreras económicas que enfrentan los jóvenes, sino también el impacto de factores como el aumento de los precios de la vivienda y las recientes subidas de los tipos de interés. En nuestro estudio, abordaremos este problema desde el punto de vista del precio de la vivienda, analizando cómo las condiciones macroeconómicas afectan la accesibilidad de la vivienda en España.
+
+A lo largo de este trabajo trataremos de entender el comportamiento del índice del precio de la vivienda, y por consiguiente, el mercado inmobiliario. Durante el escrito trataremos de explicar el mercado de la vivienda a partir de variables macroeconómicas como el IPC, el número de personas activas y el coste salarial. Emplearemos distintos modelos de análisis de datos de panel para poder tener en cuenta la Comunidad Autonoma y el paso del tiempo. Seguidamente seleccionaremos el que más se adecúe a nuestro caso de estudio aplicando distintos métodos de validación.
+
+En segunda instancia, alargaremos el periodo temporal de estudio y nos centraremos en el mercado de la vivienda de la Comunidad Valenciana. Exploraremos el comportamiento de los datos desde 2007 para enfocar nuestro posterior análisis. El principal objetivo de este punto será obtener un modelo que prediga el precio de la vivienda a un trimestre vista (corto plazo) y otro modelo que sirva para predecir a medio largo plazo.
 
 ## Preguntas
 
@@ -51,9 +58,9 @@ Hoy en día la accesibilidad a la vivienda es un problema presente en nuestra so
 
 En nuestro archivo datos_trabajo.xlsx, tenemos un total de 204 observaciones y 6 variables. Las variables se definen de la siguiente forma:
 
--   CCAA: comunidad autonóma (individuos) (no tenemos datos ni de Ceuta ni de Melilla)
+-   CCAA: comunidad autónoma (individuos) (no tenemos datos ni de Ceuta ni de Melilla)
 -   Periodo: periodo de tiempo, desde 2017 hasta 2020 divididos por trimestres
--   IPC: indices de precio de consumo
+-   IPC: índices de precio de consumo
 -   Personas activas: el número de personas activas
 -   Precio vivienda: es un índice confeccionado en España por el Instituto Nacional de Estadística que fue publicado con el propósito de reflejar la evolución de precios de la vivienda.
 -   Coste_salarial_total: se refiere al gasto total que una empresa incurre al pagar los salarios y las prestaciones a sus empleados. Se incluyen los sectores de industria, construcción y servicios
@@ -70,19 +77,15 @@ Abrimos nuestro fichero de datos y cargamos los datos en un panel data frame. Le
 datos <- read_excel("./datos_trabajo.xlsx")
 data <- pdata.frame(datos, index = c("CCAA","Periodo"), drop.index = FALSE, row.names = TRUE)
 
-head(data)
-
-```
-
-Convertimos a numérico las columnas Personas_activas y Precio_vivienda que estaban en tipo texto y cambiamos el nombre de la columna Coste.salarial.total a Coste_salarial_total.
-
-```{r}
+# Convertimos a numérico las columnas Personas_activas y Precio_vivienda que estaban en tipo texto y cambiamos el nombre de la columna Coste.salarial.total a Coste_salarial_total.
 data$Personas_activas = as.numeric(data$Personas_activas)
 data$Precio_vivienda = as.numeric(data$Precio_vivienda)
 colnames(data)[colnames(data) == "Coste.salarial.total"] <- "Coste_salarial_total"
 
 head(data)
 ```
+
+Convertimos a numérico las columnas Personas_activas y Precio_vivienda que estaban en tipo texto y cambiamos el nombre de la columna Coste.salarial.total a Coste_salarial_total.
 
 ## Análisis exploratorio
 
@@ -201,7 +204,6 @@ library(kableExtra)
 options(knitr.table.format = "html")
 library(babynames)
 library(viridis)
-library(DT)
 library(plotly)
 
 # Reordenar las CCAA basándose en la media del precio de la vivienda
@@ -215,7 +217,6 @@ p = tmp %>%
     geom_line( data=tmp %>% dplyr::select(-CCAA), aes(group=name2), color="grey", size=0.5, alpha=0.5) +
     geom_line( aes(color=CCAA), color="#69b3a2", size=1.2 )+
     scale_color_viridis(discrete = TRUE) +
-    theme_ipsum() +
     theme(
       legend.position="none",
       plot.title = element_text(size=14),
@@ -252,27 +253,29 @@ Una vez hechos los modelos, elegiremos tanto desde el punto de vista teórico co
 
 ### Modelo Pool de datos
 
+Un modelo de pool de datos (pooled data model) es una técnica estadística utilizada en econometría que combina datos de corte transversal y series temporales para analizar y estimar efectos que son constantes a través del tiempo pero pueden variar entre unidades transversales.
+
 ```{r}
 pool_datos <- plm(Precio_vivienda ~ Personas_activas + IPC + Coste_salarial_total, data = data, model = "pooling")
 
 summary(pool_datos)
 ```
 
-El intercept es -169.69. Este valor es la estimación del precio de la vivienda cuando todas las demás variables son cero.
+-   El interceptse estima en -169.69, lo que sería el precio de la vivienda cuando las variables predictoras son cero, aunque este escenario es teóricamente no plausible.
 
-El coeficiente asociado a la variable "Personas_activas" es -7.3953e-05. No es estadísticamente significativo a un nivel de confianza del 95% (p-value = 0.7162).
+-   La variable 'Personas_activas' tiene un impacto negativo insignificante en el precio de la vivienda (p-valor = 0.7162), indicando que no es un predictor estadísticamente significativo.
 
-El coeficiente asociado al IPC es 2.5965. Es estadísticamente significativo (p-value \< 0.001), y positivo. Cada unidad de aumento en el IPC se asocia con un aumento de 2.5965 en el precio de la vivienda.
+-   El 'IPC' muestra un efecto positivo significativo (coeficiente = 2.5965, p-valor \< 0.001), sugiriendo que un aumento en el IPC se asocia con un incremento en el precio de la vivienda.
 
-El coeficiente asociado al "Coste_salarial_total" es 0.017343. Es estadísticamente significativo (p-value \< 0.001) y positivo. Cada unidad de aumento en el coste salarial total se asocia con un aumento de 0.017343 en el precio de la vivienda.
+-   El 'Coste_salarial_total' también es un predictor positivo y significativo (coeficiente = 0.017343, p-valor \< 0.001), indicando que los aumentos en el coste salarial están asociados con precios de vivienda más altos.
 
-El valor F es 47.936 con un p-value muy pequeño (\< 2.22e-16). Esto sugiere que al menos una de las variables independientes es significativa en la explicación de la variabilidad en el precio de la vivienda.
+-   El modelo es estadísticamente significativo en su conjunto (F-statistic = 47.936, p-valor \< 2.22e-16) y explica aproximadamente el 41.83% de la variabilidad del precio de la vivienda (R-cuadrado ajustado = 0.40955).
 
 En resumen, el modelo sugiere que el IPC y el Coste Salarial Total son variables significativas y positivas en la explicación del precio de la vivienda, mientras que la variable "Personas_activas" no parece tener un impacto significativo.
 
 ### Efectos fijos individuales MCVD
 
-Consideramos efectos fijos para cada Comunidad Autónoma (CCAA).
+El modelo de efectos fijos individuales controla la heterogeneidad no observada que es constante en el tiempo pero varía entre individuos. Mientras que el modelo de pool de datos asume que esta heterogeneidad no observada es inexistente o irrelevante. En nuestro caso los individuos serán las comunidades autónomas.
 
 ```{r}
 efectos_fijos <- plm(Precio_vivienda ~ Personas_activas + IPC + Coste_salarial_total + as.factor(CCAA), data = data, model="pooling")
@@ -295,6 +298,8 @@ El valor F es 121.2 con un p-value muy pequeño (\< 2.2e-16). Esto sugiere que a
 El modelo parece tener un buen ajuste y explica una gran proporción de la variabilidad en el precio de la vivienda. Las variables de personas activas, IPC y coste salarial total son significativas en la predicción del precio de la vivienda, y también hay diferencias significativas en los precios de vivienda entre las diferentes CCAA.
 
 ### Efectos aleatorios
+
+El modelo de efectos aleatorios asume que las diferencias individuales no observadas entre las individuos son aleatorias y no correlacionadas con las variables independientes del modelo. A diferencia de los modelos de efectos fijos, que estiman parámetros únicos para cada CCAA, el enfoque de efectos aleatorios incorpora la heterogeneidad no observada en el término del error.
 
 ```{r}
 efectos_aleatorios <- plm(Precio_vivienda ~ Personas_activas + IPC + Coste_salarial_total , data = data, model = "random")
@@ -319,7 +324,7 @@ El modelo de efectos aleatorios tiene en cuenta la variabilidad no observada esp
 
 Desde el punto de vista teórico, entre un modelo de pool de datos y un modelo de efectos fijos individuales eligiremos el modelo de efectos fijos individuales porque existen diferencias en el precio de la vivienda en cada CCAA. No es lo mismo el precio de la vivienda en Madrid que en Castilla-La-Mancha o Extremadura.
 
-Y entre un modelo de efectso fijos o aleatorios, elegiremos el modelo de efectos fijos ya que la muestra no es aleatoria.
+Y entre un modelo de efectos fijos o aleatorios, elegiremos el modelo de efectos fijos ya que la muestra no es aleatoria.
 
 Desde el punto de vista de los contrastes, aplicamos en primer lugar el contraste de homogeneidad para elegir entre pool de datos o efectos fijos.
 
@@ -756,7 +761,7 @@ bondad(df_partido.ts.valid, mean(df_partido.ts.valid), df_partido.autoarima.pred
 
 El modelo ARIMA(0,1,0) con deriva proporciona una aproximación simplificada pero potente para modelar la serie temporal del índice de precios de la vivienda en la Comunidad Valenciana. La ausencia de términos autoregresivos (AR) y de medias móviles (MA) indica que el modelo se basa puramente en la diferenciación de los datos (I=1) para lograr la estacionariedad y un término de deriva para captar la tendencia. El coeficiente de deriva de 1.0160 sugiere una tendencia constante en el tiempo, y su error estándar de 0.2045 muestra que este coeficiente es estadísticamente significativo. Este modelo proporciona un enfoque sólido y mucho mejor que los otros modelos para la predicción del índice de precios de la vivienda. Cabe resaltar que el R^2^\* del modelo es el único que es superior a 0, por lo tanto, hemos conseguido superar al modelo ingenuo.
 
-Así pues, es obvio que el mejor modelo de esta sección es el ARIMA (0, 1, 0), por lo tanto, nos quedaremos con ese como mejor representante de los modelos a medio plazo con todos los datos.
+Así pues, es obvio que el mejor modelo de esta sección es el ARIMA (0, 1, 0), por lo tanto, nos quedaremos con ese como mejor representante de los modelos a medio plazo con los datos desde 2014.
 
 #### Predicciones a corto plazo
 
@@ -890,3 +895,9 @@ Al comparar estos parámetros, el modelo ARIMA (0,1,0) supera claramente al ARIM
 Sin embargo, cabe resaltar que el modelo entrenado con parte de los datos no estaría preparado para un cambio de tendencia alcista a bajista. Por lo tanto, sería imprescindible tener en cuenta noticias y eventos macroeconómicos, políticos y sociales para valorar la fiabilidad de nuestra predicción. Ante un escenario de previsible estancamiento y posterior caida del mercado inmobiliaría nuestro modelo es probable que no se adaptara correctamente. En cuyo caso es posible que el ARIMA entrenado con todos los datos diera mejores aproximaciones.
 
 ## Conclusiones
+
+A lo largo de este análisis hemos conocido como afecta el IPC, el número de personas activas y el coste salarial al mercado de vivienda a través de un modelo de datos de panel de efectos fijos. Sabemos que el número de personas activas y el IPC se relacionan de manera positiva con el precio de la vivienda, siendo la segunda la que más fuerte se relaciona. Por otra parte, el coste salarial total se relaciona de manera negativa con nuestra variable. Además hemos confirmado que existen efectos asociados a cada comunidad que afectan directamente al precio de la vivenda. Por ejemplo, conocemos que la Comunidad Valenciana tiene de media 13.315 puntos más de índice de precio de vivienda que Andalucía.
+
+Por otra parte, hemos obtenido dos modelos de predicción orientados cada uno a un objetivo. Primeramente, para la predicción a corto plazo hemos utilizado un modelo entrenado con todos los datos ya que es el que mejor resultado nos daba, concretamente es un modelo ARIMA (2,2,0)(0,0,1)[4]. En segundo lugar, como modelo predictivo a medio plazo utilizamos un modelo ARIMA (0,1,0) entrenado solo con los datos a partir de 2014.
+
+Con este trabajo explicamos el mercado de la vivienda y obtenemos dos modelos que nos podrían ser de utilidad para anticiparnos al mercado.
